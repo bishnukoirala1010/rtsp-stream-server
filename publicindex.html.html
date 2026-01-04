@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Camera Feed</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 1200px;
+            width: 100%;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+        
+        .status {
+            text-align: center;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        
+        .status.live {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status.offline {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .video-container {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 1.2em;
+            text-align: center;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            padding: 12px 30px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        
+        .info p {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 Live Camera Feed</h1>
+        <div class="status offline" id="status">● Connecting...</div>
+        
+        <div class="video-container">
+            <video id="video" controls autoplay muted></video>
+            <div class="loading" id="loading">Initializing stream...</div>
+        </div>
+        
+        <div class="controls">
+            <button onclick="location.reload()">🔄 Refresh</button>
+            <button onclick="toggleFullscreen()">⛶ Fullscreen</button>
+        </div>
+        
+        <div class="info">
+            <p><strong>📡 Stream Status:</strong> <span id="streamInfo">Checking...</span></p>
+            <p><strong>ℹ️ Note:</strong> The camera stream is being converted from RTSP to HLS format for web playback.</p>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const loading = document.getElementById('loading');
+        const status = document.getElementById('status');
+        const streamInfo = document.getElementById('streamInfo');
+        const streamUrl = '/stream/stream.m3u8';
+
+        function updateStatus(isLive, message) {
+            if (isLive) {
+                status.className = 'status live';
+                status.textContent = '● LIVE';
+            } else {
+                status.className = 'status offline';
+                status.textContent = '● ' + message;
+            }
+        }
+
+        function initStream() {
+            if (Hls.isSupported()) {
+                const hls = new Hls({
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                });
+                
+                hls.loadSource(streamUrl);
+                hls.attachMedia(video);
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    loading.style.display = 'none';
+                    updateStatus(true, 'LIVE');
+                    streamInfo.textContent = 'Connected and streaming';
+                    video.play();
+                });
+                
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                    if (data.fatal) {
+                        console.error('HLS Error:', data);
+                        loading.textContent = 'Connection lost. Retrying...';
+                        updateStatus(false, 'Reconnecting...');
+                        streamInfo.textContent = 'Attempting to reconnect...';
+                        
+                        setTimeout(() => {
+                            hls.destroy();
+                            initStream();
+                        }, 3000);
+                    }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = streamUrl;
+                video.addEventListener('loadedmetadata', function() {
+                    loading.style.display = 'none';
+                    updateStatus(true, 'LIVE');
+                    streamInfo.textContent = 'Connected and streaming';
+                    video.play();
+                });
+            } else {
+                loading.textContent = 'HLS not supported in this browser';
+                updateStatus(false, 'Browser not supported');
+                streamInfo.textContent = 'Please use a modern browser';
+            }
+        }
+
+        function toggleFullscreen() {
+            const container = document.querySelector('.video-container');
+            if (!document.fullscreenElement) {
+                container.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Check server status
+        fetch('/api/status')
+            .then(r => r.json())
+            .then(data => {
+                if (data.running) {
+                    streamInfo.textContent = 'Server running, initializing...';
+                    setTimeout(initStream, 2000);
+                } else {
+                    streamInfo.textContent = 'Server starting up...';
+                    setTimeout(() => location.reload(), 5000);
+                }
+            })
+            .catch(err => {
+                streamInfo.textContent = 'Server offline';
+                updateStatus(false, 'Server Error');
+            });
+    </script>
+</body>
+</html>
